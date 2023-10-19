@@ -3,11 +3,12 @@ import random
 
 class PushDeGrootGraph(nx.DiGraph):
 
-    def __init__(self, n, ops=[]):
-        p = 0.1
-        G = nx.fast_gnp_random_graph(n, p, directed=True)
-        while not nx.is_strongly_connected(G):
+    def __init__(self, n, ops=[], keep_history=True, G=None):
+        if G is None:    
+            p = 0.1
             G = nx.fast_gnp_random_graph(n, p, directed=True)
+            while not nx.is_strongly_connected(G):
+                G = nx.fast_gnp_random_graph(n, p, directed=True)
         super().__init__(G)
         
         letters = 'abcdefghijklmnopqrstuvwxyz'
@@ -19,6 +20,10 @@ class PushDeGrootGraph(nx.DiGraph):
             self.labels[label] = edge
             self.alphabet.append(label)
         self.set_initial_opinions(ops)
+
+        self.keep_history = keep_history
+        if self.keep_history:
+            self.history = [[*self.opinion.values()]]
         
         self.pos = nx.spring_layout(self)
         
@@ -43,6 +48,8 @@ class PushDeGrootGraph(nx.DiGraph):
         if not nx.is_path(self, [caller, callee]):
             raise Exception("edge " + str(edge) + " does not exist")
         self.opinion[callee] = (self.opinion[callee] + self.opinion[caller]) * 0.5
+        if self.keep_history:
+            self.history.append([*self.opinion.values()])
     
     def execute_word(self, word, Check=None): # word is a list of edge labels to be used in consecutive calls
         if Check is not None:
