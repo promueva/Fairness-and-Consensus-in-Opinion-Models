@@ -1,9 +1,11 @@
 import networkx as nx
 import random
+import numpy as np
+import matplotlib.pyplot as plt
 
-class PushDeGrootGraph(nx.DiGraph):
+class InfluenceGraph(nx.DiGraph):
 
-    def __init__(self, n, ops=[], keep_history=True, G=None):
+    def __init__(self, n, ops=[], keep_history=True, G=None, edge_labels = 'abcdefghijklmnopqrstuvwxyz', influence_fn=lambda self,e: 0.5):
         if G is None:    
             p = 0.1
             G = nx.fast_gnp_random_graph(n, p, directed=True)
@@ -11,16 +13,15 @@ class PushDeGrootGraph(nx.DiGraph):
                 G = nx.fast_gnp_random_graph(n, p, directed=True)
         super().__init__(G)
         
-        letters = 'abcdefghijklmnopqrstuvwxyz'
         self.labels = {}
         self.alphabet = []
         for n, edge in enumerate(self.edges):
-            label = letters[n] if len(self.edges) < len(letters) else "%d_%d" % edge
+            label = edge_labels[n] if len(self.edges) <= len(edge_labels) else "%d_%d" % edge
             self.edges[edge]['label'] = label
             self.labels[label] = edge
             self.alphabet.append(label)
         self.set_initial_opinions(ops)
-
+        self.influence_fn = influence_fn
         self.keep_history = keep_history
         if self.keep_history:
             self.history = [[*self.opinion.values()]]
@@ -29,25 +30,37 @@ class PushDeGrootGraph(nx.DiGraph):
         
     def set_initial_opinions(self, ops=[]):
         self.opinion = {}
-        for node in self:
-            if node < len(ops):
-                self.opinion[node] = ops[node]
+        for i,node in enumerate(self):
+            if i < len(ops):
+                self.opinion[node] = ops[i]
             else:
                 self.opinion[node] = random.random()
 
     def draw(self):
         labels_with_opinions = {n:"%.2f \n %d" % (s,n) for n, s in self.opinion.items()}
         nx.draw_networkx_nodes(self, self.pos, margins=0.1)
-        nx.draw_networkx_edges(self, self.pos)
+        nx.draw_networkx_edges(self, self.pos, connectionstyle='arc3,rad=0.2')
         nx.draw_networkx_labels(self, self.pos,  labels=labels_with_opinions, verticalalignment="baseline")
-        nx.draw_networkx_edge_labels(self, self.pos, nx.get_edge_attributes(self, "label"))
+        nx.draw_networkx_edge_labels(self, self.pos, nx.get_edge_attributes(self, "label"), connectionstyle='arc3,rad=0.2')
 
-    
-    def make_call(self, edge):
+    def plot_opinion_evolution(self):
+        history = np.transpose(self.history)
+
+        fig, ax = plt.subplots()
+        plt.ylim((-0.1,1.1))
+
+        plt.xlabel("Time")
+        plt.ylabel("Opinion value")
+
+        for i, data in enumerate(history):
+            ax.plot(data,  label=f"{i+1}")
+        return fig
+
+    def execute_edge(self, edge):
         caller, callee = edge
         if not nx.is_path(self, [caller, callee]):
             raise Exception("edge " + str(edge) + " does not exist")
-        self.opinion[callee] = (self.opinion[callee] + self.opinion[caller]) * 0.5
+        self.opinion[callee] = self.opinion[callee] + (self.opinion[caller] - self.opinion[callee]) * self.influence_fn(self,edge)
         if self.keep_history:
             self.history.append([*self.opinion.values()])
     
@@ -55,9 +68,4 @@ class PushDeGrootGraph(nx.DiGraph):
         if Check is not None:
             test = Check(self)
         for t, e in enumerate(word):
-            self.make_call(self.labels[e])
-            if Check is not None:
-                test.check(t)
-        if Check is not None:
-            return test.terminate()
-
+            self.execute_edge(self.labels[e])
